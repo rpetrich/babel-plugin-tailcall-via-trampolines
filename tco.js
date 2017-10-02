@@ -276,6 +276,24 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 	}
 }
 
+function declaratorIsEffectivelyFinal(path) {
+	if (!path.isVariableDeclarator() || !path.parentPath.isVariableDeclaration()) {
+		return false;
+	}
+	if (path.parent.kind === "const") {
+		return true;
+	}
+	const name = path.node.id.name;
+	const references = path.parentPath.scope.getBinding(name).referencePaths
+	for (let reference of references) {
+		// TODO: See if reference.parentPath mutates the binding
+		// if (mutates) {
+		// 	return false;
+		// }
+	}
+	return false;
+}
+
 module.exports = function({ types, template }) {
 	return {
 		visitor: {
@@ -305,7 +323,7 @@ module.exports = function({ types, template }) {
 							return;
 						}
 						this.hasTailCall = true;
-						rewriteTailCalls(types, path, path.parentPath.isVariableDeclarator() && path.parentPath.parentPath.isVariableDeclaration() && path.parentPath.parent.kind === "const" ? path.parent.id.name : null);
+						rewriteTailCalls(types, path, declaratorIsEffectivelyFinal(path.parentPath) ? path.parent.id.name : null);
 						path.replaceWith(types.callExpression(types.identifier("__as_tail_recursive"), [path.node]));
 						path.skip();
 					}
