@@ -48,6 +48,121 @@ function rewriteThisExpression(types, path) {
 	path.skip();
 }
 
+function allPathsMatch(path, matchingNodeTypes) {
+	if (!path || !path.node) {
+		return true;
+	}
+	if (matchingNodeTypes.indexOf(path.node.type) !== -1) {
+		return true;
+	}
+	const match = { all: false }
+	const visitor = {
+		IfStatement(path) {
+			path.skip();
+			if (allPathsMatch(path.get("test"), matchingNodeTypes) || (allPathsMatch(path.get("consequent"), matchingNodeTypes) && allPathsMatch(path.get("alternate"), matchingNodeTypes))) {
+				this.match.all = true;
+				path.stop();
+			}
+		},
+		ConditionalExpression(path) {
+			path.skip();
+			if (allPathsMatch(path.get("test"), matchingNodeTypes) || (allPathsMatch(path.get("consequent"), matchingNodeTypes) && allPathsMatch(path.get("alternate"), matchingNodeTypes))) {
+				this.match.all = true;
+				path.stop();
+			}
+		},
+		SwitchStatement(path) {
+			path.skip();
+			// TODO: Support checking that all cases match or fallthrough
+			if (allPathsMatch(path.get("discriminant"), matchingNodeTypes)) {
+				this.match.all = true;
+				path.stop();
+			}
+		},
+		DoWhileStatement(path) {
+			path.skip();
+			// TODO: Support detecting break/return statements
+			if (allPathsMatch(path.get("body"), matchingNodeTypes)) {
+				this.match.all = true;
+				path.stop();
+			}
+		},
+		WhileStatement(path) {
+			path.skip();
+			// TODO: Support detecting break/return statements
+			if (allPathsMatch(path.get("test"), matchingNodeTypes)) {
+				this.match.all = true;
+				path.stop();
+			}
+		},
+		ForInStatement(path) {
+			path.skip();
+			if (allPathsMatch(path.get("right"), matchingNodeTypes)) {
+				this.match.all = true;
+				path.stop();
+			}
+		},
+		ForOfStatement(path) {
+			path.skip();
+			if (allPathsMatch(path.get("right"), matchingNodeTypes)) {
+				this.match.all = true;
+				path.stop();
+			}
+		},
+		ForStatement(path) {
+			path.skip();
+			if (allPathsMatch(path.get("init"), matchingNodeTypes) || allPathsMatch(path.get("test"), matchingNodeTypes)) {
+				this.match.all = true;
+				path.stop();
+			}
+		},
+		LogicalExpression(path) {
+			path.skip();
+			if (allPathsMatch(path.get("left"), matchingNodeTypes)) {
+				this.match.all = true;
+				path.stop();
+			}
+		},
+		ReturnStatement(path) {
+			path.stop();
+		},
+		BreakStatement(path) {
+			path.stop();
+		},
+		ContinueStatement(path) {
+			path.stop();
+		},
+		ThrowStatement(path) {
+			// TODO: Handle throw statements correctly
+			path.stop();
+		},
+		TryStatement(path) {
+			path.skip();
+			const catchClause = path.get("handler");
+			if (catchClause.node) {
+				if (allPathsMatch(catchClause, matchingNodeTypes)) {
+					this.match.all = true;
+					path.stop();
+				}
+			} else {
+				path.stop();
+			}
+		},
+		Function(path) {
+			path.skip();
+		}
+	};
+	for (let nodeType of matchingNodeTypes) {
+		visitor[nodeType] = function(path) {
+			this.match.all = true;
+			path.stop();
+		};
+	}
+	path.traverse(visitor, {match});
+	return match.all;
+}
+
+
 function rewriteTailCalls(types, path) {
 	path.traverse({
 		ReturnStatement: {
@@ -143,6 +258,10 @@ function rewriteTailCalls(types, path) {
 			});
 		},
 	});
+	// Handle the implicit "return undefined;" if not all paths through the function have an explicit return
+	if (!allPathsMatch(path, ["ReturnStatement", "ThrowStatement"])) {
+		path.node.body.body.push(types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("undefined"))));
+	}
 }
 
 module.exports = function({ types, template }) {
