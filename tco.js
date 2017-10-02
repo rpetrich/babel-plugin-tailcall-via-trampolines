@@ -163,7 +163,7 @@ function allPathsMatch(path, matchingNodeTypes) {
 }
 
 
-function rewriteTailCalls(types, path) {
+function rewriteTailCalls(types, path, selfIdentifierName) {
 	path.traverse({
 		ReturnStatement: {
 			enter(path) {
@@ -187,33 +187,45 @@ function rewriteTailCalls(types, path) {
 			},
 			exit(path) {
 				const argumentPath = path.get("argument");
+				const expressions = [];
 				if (argumentPath.isCallExpression()) {
 					if (argumentPath.node.callee.type == "MemberExpression") {
 						// return foo.bar(...);
-						path.replaceWith(types.blockStatement([
-							types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.memberExpression(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), argumentPath.node.callee.object), argumentPath.node.callee.property, argumentPath.node.callee.computed))),
-							types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression(argumentPath.node.arguments))),
-							types.returnStatement(),
-						]));
+						// Uses a compound expression to avoid invoking the left side of the member expression twice (which would run side-effects twice!)
+						// Evaluates left side of member expression, then right side, then arguments
+						expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.memberExpression(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), argumentPath.node.callee.object), argumentPath.node.callee.property, argumentPath.node.callee.computed)));
+						expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression(argumentPath.node.arguments)));
 					} else {
 						// return foo(...);
-						path.replaceWith(types.blockStatement([
-							types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), types.identifier("null"))),
-							types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), argumentPath.node.callee)),
-							types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression(argumentPath.node.arguments))),
-							types.returnStatement(),
-						]));
+						// Evaluates left side of call expression, then arguments
+						expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), types.identifier("null")));
+						const callee = argumentPath.node.callee;
+						if (callee.type !== "Identifier" || callee.name !== selfIdentifierName) {
+							// Relies on the fact that self was just called, and no need to set state.next again
+							expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), callee));
+						}
+						expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression(argumentPath.node.arguments)));
 					}
 				} else if (argumentPath.node) {
 					// return ...;
-					path.replaceWith(types.blockStatement([
-						types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("undefined"))),
-						types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("result")), argumentPath.node)),
-						types.returnStatement(),
-					]));
+					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("undefined")));
+					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("result")), argumentPath.node));
 				} else {
 					// return;
-					path.replaceWith(types.returnStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("undefined"))));
+					// Relies on the fact that the default value for state.result is undefined
+					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("undefined")));
+				}
+				// Prefer simpler forms
+				switch (expressions.length) {
+					case 0:
+						path.replaceWith(types.returnStatement());
+						break;
+					case 1:
+						path.replaceWith(types.returnStatement(expressions[0]));
+						break;
+					default:
+						path.replaceWith(types.returnStatement(types.sequenceExpression(expressions)));
+						break;
 				}
 				path.skip();
 			}
@@ -274,7 +286,7 @@ module.exports = function({ types, template }) {
 							return;
 						}
 						this.hasTailCall = true;
-						rewriteTailCalls(types, path);
+						rewriteTailCalls(types, path, path.node.id.name);
 						const tailFunction = types.functionExpression(path.scope.generateUidIdentifier(path.node.id.name), path.node.params, path.node.body);
 						var parent = path.getFunctionParent() || path.getProgramParent();
 						var body = parent.get("body.0");
@@ -293,7 +305,7 @@ module.exports = function({ types, template }) {
 							return;
 						}
 						this.hasTailCall = true;
-						rewriteTailCalls(types, path);
+						rewriteTailCalls(types, path, null);
 						path.replaceWith(types.callExpression(types.identifier("__as_tail_recursive"), [path.node]));
 						path.skip();
 					}
@@ -326,7 +338,7 @@ module.exports = function({ types, template }) {
 						})
 						let functionExpression;
 						if (path.node.body.type == "BlockStatement") {
-							functionExpression = types.functionExpression(null, path.node.params, path.node.body.body);
+							functionExpression = types.functionExpression(null, path.node.params, path.node.body);
 						} else {
 							functionExpression = types.functionExpression(null, path.node.params, types.blockStatement([types.returnStatement(path.node.body)]));
 						}
