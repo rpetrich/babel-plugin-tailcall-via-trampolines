@@ -305,7 +305,7 @@ module.exports = function({ types, template }) {
 							return;
 						}
 						this.hasTailCall = true;
-						rewriteTailCalls(types, path, null);
+						rewriteTailCalls(types, path, path.parentPath.isVariableDeclarator() && path.parentPath.parentPath.isVariableDeclaration() && path.parentPath.parent.kind === "const" ? path.parent.id.name : null);
 						path.replaceWith(types.callExpression(types.identifier("__as_tail_recursive"), [path.node]));
 						path.skip();
 					}
