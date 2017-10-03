@@ -164,6 +164,18 @@ function allPathsMatch(path, matchingNodeTypes) {
 
 
 function rewriteTailCalls(types, path, selfIdentifierName) {
+	let selfUsesThis = false;
+	if (selfIdentifierName) {
+		path.traverse({
+			ThisExpression(path) {
+				selfUsesThis = true;
+				path.stop();
+			},
+			Function(path) {
+				path.skip();
+			}
+		});
+	}
 	path.traverse({
 		ReturnStatement: {
 			enter(path) {
@@ -198,9 +210,13 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 					} else {
 						// return foo(...);
 						// Evaluates left side of call expression, then arguments
-						expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), types.identifier("null")));
 						const callee = argumentPath.node.callee;
-						if (callee.type !== "Identifier" || callee.name !== selfIdentifierName) {
+						const isSelf = callee.type === "Identifier" && callee.name === selfIdentifierName;
+						if (!isSelf || selfUsesThis) {
+							// Relies on the fact that self doesn't use this
+							expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), types.identifier("null")));
+						}
+						if (!isSelf) {
 							// Relies on the fact that self was just called, and no need to set state.next again
 							expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), callee));
 						}
