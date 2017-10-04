@@ -5,15 +5,15 @@ function __as_tail_recursive(recursiveFunction) {
 	function __recursion_trampoline() {
 		var state = {
 			next: __recursion_trampoline,
-			this: this,
-			args: Array.prototype.slice.call(arguments)
+			this: this
 		};
+		var args = Array.prototype.slice.call(arguments);
 
 		do {
-			state.next.__recursive_body.apply(state, state.args);
+			args = state.next.__recursive_body.apply(state, args);
 		} while (state.next.__recursive_body);
 
-		return state.next.apply(state.this, state.args);
+		return state.next.apply(state.this, args);
 	}
 }
 
@@ -23,8 +23,8 @@ function __tail_return(result) {
 
 const fib = __as_tail_recursive(function (n, previous = 1, beforePrevious = 0) {
 	if (n === 0) {
-		return this.next = __tail_return, this.args = [beforePrevious];
+		return this.next = __tail_return, [beforePrevious];
 	}
-	return this.args = [n - 1, previous + beforePrevious, previous];
+	return [n - 1, previous + beforePrevious, previous];
 });
 

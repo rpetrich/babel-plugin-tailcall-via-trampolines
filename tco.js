@@ -206,7 +206,7 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 						// Uses a compound expression to avoid invoking the left side of the member expression twice (which would run side-effects twice!)
 						// Evaluates left side of member expression, then right side, then arguments
 						expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.memberExpression(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), argumentPath.node.callee.object), argumentPath.node.callee.property, argumentPath.node.callee.computed)));
-						expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression(argumentPath.node.arguments)));
+						expressions.push(types.arrayExpression(argumentPath.node.arguments));
 					} else {
 						// return foo(...);
 						// Evaluates left side of call expression, then arguments
@@ -220,16 +220,16 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 							// Relies on the fact that self was just called, and no need to set state.next again
 							expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), callee));
 						}
-						expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression(argumentPath.node.arguments)));
+						expressions.push(types.arrayExpression(argumentPath.node.arguments));
 					}
 				} else if (argumentPath.node) {
 					// return ...;
 					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
-					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression([argumentPath.node])));
+					expressions.push(types.arrayExpression([argumentPath.node]));
 				} else {
 					// return;
 					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
-					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression([])));
+					expressions.push(types.arrayExpression([]));
 				}
 				// Prefer simpler forms
 				switch (expressions.length) {
@@ -391,11 +391,12 @@ module.exports = function({ types, template }) {
 							__recursion_trampoline.__recursive_body = recursiveFunction;
 							return __recursion_trampoline;
 							function __recursion_trampoline() {
-								var state = { next: __recursion_trampoline, this: this, args: Array.prototype.slice.call(arguments)};
+								var state = { next: __recursion_trampoline, this: this };
+								var args = Array.prototype.slice.call(arguments);
 								do {
-									state.next.__recursive_body.apply(state, state.args);
+									args = state.next.__recursive_body.apply(state, args);
 								} while(state.next.__recursive_body);
-								return state.next.apply(state.this, state.args);
+								return state.next.apply(state.this, args);
 							}
 						}
 						function __tail_return(result) {
