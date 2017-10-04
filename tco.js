@@ -288,7 +288,7 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 	});
 	// Handle the implicit "return undefined;" if not all paths through the function have an explicit return
 	if (!allPathsMatch(path, ["ReturnStatement", "ThrowStatement"])) {
-		path.node.body.body.push(types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("undefined"))));
+		path.node.body.body.push(types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return"))));
 	}
 }
 
