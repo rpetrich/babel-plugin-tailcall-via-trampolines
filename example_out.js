@@ -1,8 +1,8 @@
-function __as_tail_recursive(recursiveFunction) {
+function __as_tail_recursive3(recursiveFunction) {
 	__recursion_trampoline.__recursive_body = recursiveFunction;
 	return __recursion_trampoline;
 
-	function __recursion_trampoline() {
+	function __recursion_trampoline(_0, _1, _2) {
 		var state = {
 			next: __recursion_trampoline,
 			this: this
@@ -21,7 +21,7 @@ function __tail_return(result) {
 	return result;
 }
 
-const fib = __as_tail_recursive(function (n, previous = 1, beforePrevious = 0) {
+const fib = __as_tail_recursive3(function (n, previous = 1, beforePrevious = 0) {
 	if (n === 0) {
 		return this.next = __tail_return, [beforePrevious];
 	}

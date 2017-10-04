@@ -319,13 +319,14 @@ module.exports = function({ types, template }) {
 						if (path.node.async || path.node.generator) {
 							return;
 						}
-						this.hasTailCall = true;
+						const argumentCount = path.node.params.length;
+						(this.tailCalls || (this.tailCalls = {}))[argumentCount] = true;
 						rewriteTailCalls(types, path, path.node.id.name);
 						const tailFunction = types.functionExpression(path.scope.generateUidIdentifier(path.node.id.name), path.node.params, path.node.body);
 						var parent = path.getFunctionParent() || path.getProgramParent();
 						var body = parent.get("body.0");
 						body.insertBefore(types.variableDeclaration("var", [
-							types.variableDeclarator(path.node.id, types.callExpression(types.identifier("__as_tail_recursive"), [tailFunction]))
+							types.variableDeclarator(path.node.id, types.callExpression(types.identifier("__as_tail_recursive" + argumentCount), [tailFunction]))
 						]));
 						path.remove();
 						path.skip();
@@ -338,9 +339,10 @@ module.exports = function({ types, template }) {
 						if (path.node.async || path.node.generator) {
 							return;
 						}
-						this.hasTailCall = true;
+						const argumentCount = path.node.params.length;
+						(this.tailCalls || (this.tailCalls = {}))[argumentCount] = true;
 						rewriteTailCalls(types, path, declaratorIsEffectivelyFinal(path.parentPath) ? path.parent.id.name : null);
-						path.replaceWith(types.callExpression(types.identifier("__as_tail_recursive"), [path.node]));
+						path.replaceWith(types.callExpression(types.identifier("__as_tail_recursive" + argumentCount), [path.node]));
 						path.skip();
 					}
 				}
@@ -386,22 +388,28 @@ module.exports = function({ types, template }) {
 			},
 			Program: {
 				exit(path) {
-					if (this.hasTailCall) {
-						path.get("body.0").insertBefore(template(`function __as_tail_recursive(recursiveFunction) {
-							__recursion_trampoline.__recursive_body = recursiveFunction;
-							return __recursion_trampoline;
-							function __recursion_trampoline() {
-								var state = { next: __recursion_trampoline, this: this };
-								var args = Array.prototype.slice.call(arguments);
-								do {
-									args = state.next.__recursive_body.apply(state, args);
-								} while(state.next.__recursive_body);
-								return state.next.apply(state.this, args);
-							}
-						}
-						function __tail_return(result) {
+					if (this.tailCalls) {
+						const body = path.get("body.0");
+						body.insertBefore(template(`function __tail_return(result) {
 							return result;
 						}`)());
+						for (var i in this.tailCalls) {
+							if (this.tailCalls.hasOwnProperty(i)) {
+								let arguments = Array(i-0).toString().split(",").map((v,i) => "_" + i).join(",");
+								path.get("body.0").insertBefore(template(`function __as_tail_recursive${i}(recursiveFunction) {
+									__recursion_trampoline.__recursive_body = recursiveFunction;
+									return __recursion_trampoline;
+									function __recursion_trampoline(${arguments}) {
+										var state = { next: __recursion_trampoline, this: this };
+										var args = Array.prototype.slice.call(arguments);
+										do {
+											args = state.next.__recursive_body.apply(state, args);
+										} while(state.next.__recursive_body);
+										return state.next.apply(state.this, args);
+									}
+								}`)());
+							}
+						}
 						path.stop();
 					}
 				}
