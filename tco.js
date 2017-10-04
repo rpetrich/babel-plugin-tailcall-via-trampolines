@@ -398,6 +398,9 @@ module.exports = function({ types, template }) {
 								let arguments = Array(i-0).toString().split(",").map((v,i) => "_" + i).join(",");
 								path.get("body.0").insertBefore(template(`function __as_tail_recursive${i}(recursiveFunction) {
 									__recursion_trampoline.__recursive_body = recursiveFunction;
+									__recursion_trampoline.toString = function() {
+										return recursiveFunction.toString();
+									}
 									return __recursion_trampoline;
 									function __recursion_trampoline(${arguments}) {
 										var state = { next: __recursion_trampoline, this: this };
