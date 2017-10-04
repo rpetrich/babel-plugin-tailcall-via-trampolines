@@ -6,21 +6,24 @@ function __as_tail_recursive(recursiveFunction) {
 		var state = {
 			next: __recursion_trampoline,
 			this: this,
-			args: Array.prototype.slice.call(arguments),
-			result: undefined
+			args: Array.prototype.slice.call(arguments)
 		};
 
 		do {
 			state.next.__recursive_body.apply(state, state.args);
-		} while (state.next && state.next.__recursive_body);
+		} while (state.next.__recursive_body);
 
-		return state.next ? state.next.apply(state.this, state.args) : state.result;
+		return state.next.apply(state.this, state.args);
 	}
+}
+
+function __tail_return(result) {
+	return result;
 }
 
 const fib = __as_tail_recursive(function (n, previous = 1, beforePrevious = 0) {
 	if (n === 0) {
-		return this.next = undefined, this.result = beforePrevious;
+		return this.next = __tail_return, this.args = [beforePrevious];
 	}
 	return this.args = [n - 1, previous + beforePrevious, previous];
 });

@@ -224,12 +224,12 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 					}
 				} else if (argumentPath.node) {
 					// return ...;
-					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("undefined")));
-					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("result")), argumentPath.node));
+					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
+					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression([argumentPath.node])));
 				} else {
 					// return;
-					// Relies on the fact that the default value for state.result is undefined
-					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("undefined")));
+					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
+					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("args")), types.arrayExpression([])));
 				}
 				// Prefer simpler forms
 				switch (expressions.length) {
@@ -391,12 +391,15 @@ module.exports = function({ types, template }) {
 							__recursion_trampoline.__recursive_body = recursiveFunction;
 							return __recursion_trampoline;
 							function __recursion_trampoline() {
-								var state = { next: __recursion_trampoline, this: this, args: Array.prototype.slice.call(arguments), result: undefined };
+								var state = { next: __recursion_trampoline, this: this, args: Array.prototype.slice.call(arguments)};
 								do {
 									state.next.__recursive_body.apply(state, state.args);
-								} while(state.next && state.next.__recursive_body);
-								return state.next ? state.next.apply(state.this, state.args) : state.result;
+								} while(state.next.__recursive_body);
+								return state.next.apply(state.this, state.args);
 							}
+						}
+						function __tail_return(result) {
+							return result;
 						}`)());
 						path.stop();
 					}
