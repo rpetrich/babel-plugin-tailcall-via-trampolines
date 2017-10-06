@@ -303,14 +303,7 @@ function declaratorIsEffectivelyFinal(path) {
 		return true;
 	}
 	const name = path.node.id.name;
-	const references = path.parentPath.scope.getBinding(name).referencePaths
-	for (let reference of references) {
-		// TODO: See if reference.parentPath mutates the binding
-		// if (mutates) {
-		// 	return false;
-		// }
-	}
-	return false;
+	return path.scope.getBinding(name).constant;
 }
 
 function labelsForPath(path) {
