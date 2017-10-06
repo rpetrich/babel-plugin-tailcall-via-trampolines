@@ -309,12 +309,36 @@ function declaratorIsEffectivelyFinal(path) {
 	return false;
 }
 
+function labelsForPath(path) {
+	const labels = [];
+	while (path && path.node) {
+		if (path.isLabeledStatement()) {
+			labels.push(path.node.label.name);
+		}
+		path = path.parentPath;
+	}
+	return labels;
+}
+
+function shouldTailCallOptimize(path) {
+	const labels = labelsForPath(path);
+	const disabledIndex = labels.indexOf("not_tail_optimized");
+	if (disabledIndex === -1) {
+		return true;
+	}
+	const enabledIndex = labels.indexOf("tail_optimized");
+	if (enabledIndex === -1) {
+		return false;
+	}
+	return enabledIndex < disabledIndex;
+}
+
 module.exports = function({ types, template }) {
 	return {
 		visitor: {
 			FunctionDeclaration: {
 				exit(path) {
-					if (findTailCall(path)) {
+					if (findTailCall(path) && shouldTailCallOptimize(path)) {
 						if (path.node.async || path.node.generator) {
 							return;
 						}
@@ -334,7 +358,7 @@ module.exports = function({ types, template }) {
 			},
 			FunctionExpression: {
 				exit(path) {
-					if (findTailCall(path)) {
+					if (findTailCall(path) && shouldTailCallOptimize(path)) {
 						if (path.node.async || path.node.generator) {
 							return;
 						}
@@ -348,7 +372,7 @@ module.exports = function({ types, template }) {
 			},
 			ArrowFunctionExpression: {
 				enter(path) {
-					if (findTailCall(path)) {
+					if (findTailCall(path) && shouldTailCallOptimize(path)) {
 						if (path.node.async || path.node.generator) {
 							return;
 						}
