@@ -176,6 +176,7 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 			}
 		});
 	}
+	let usedTailReturn = false;
 	path.traverse({
 		ReturnStatement: {
 			enter(path) {
@@ -223,10 +224,12 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 					expressions.push(argumentPath.node.arguments.length != 0 ? types.arrayExpression(argumentPath.node.arguments) : types.identifier("undefined"));
 				} else if (argumentPath.node) {
 					// return ...;
+					usedTailReturn = true;
 					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
 					expressions.push(types.arrayExpression([argumentPath.node]));
 				} else {
 					// return;
+					usedTailReturn = true;
 					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
 					expressions.push(types.identifier("undefined"));
 				}
@@ -289,6 +292,7 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 	if (!allPathsMatch(path, ["ReturnStatement", "ThrowStatement"])) {
 		path.node.body.body.push(types.expressionStatement(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return"))));
 	}
+	return usedTailReturn;
 }
 
 function declaratorIsEffectivelyFinal(path) {
@@ -344,7 +348,9 @@ module.exports = function({ types, template }) {
 						}
 						const argumentCount = path.node.params.length;
 						(this.tailCalls || (this.tailCalls = {}))[argumentCount] = true;
-						rewriteTailCalls(types, path, path.node.id.name);
+						if (rewriteTailCalls(types, path, path.node.id.name)) {
+							this.usedTailReturn = true;
+						}
 						const tailFunction = types.functionExpression(path.scope.generateUidIdentifier(path.node.id.name), path.node.params, path.node.body);
 						var parent = path.getFunctionParent() || path.getProgramParent();
 						var body = parent.get("body.0");
@@ -364,7 +370,9 @@ module.exports = function({ types, template }) {
 						}
 						const argumentCount = path.node.params.length;
 						(this.tailCalls || (this.tailCalls = {}))[argumentCount] = true;
-						rewriteTailCalls(types, path, declaratorIsEffectivelyFinal(path.parentPath) ? path.parent.id.name : null);
+						if (rewriteTailCalls(types, path, declaratorIsEffectivelyFinal(path.parentPath) ? path.parent.id.name : null)) {
+							this.usedTailReturn = true;
+						}
 						path.replaceWith(types.callExpression(types.identifier("__as_tail_recursive" + argumentCount), [path.node]));
 						path.skip();
 					}
@@ -413,9 +421,11 @@ module.exports = function({ types, template }) {
 				exit(path) {
 					if (this.tailCalls) {
 						const body = path.get("body.0");
-						body.insertBefore(template(`function __tail_return(result) {
-							return result;
-						}`)());
+						if (this.usedTailReturn) {
+							body.insertBefore(template(`function __tail_return(result) {
+								return result;
+							}`)());
+						}
 						for (var i in this.tailCalls) {
 							if (this.tailCalls.hasOwnProperty(i)) {
 								let arguments = Array(i-0).toString().split(",").map((v,i) => "_" + i).join(",");
