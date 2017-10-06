@@ -414,15 +414,10 @@ module.exports = function({ types, template }) {
 				exit(path) {
 					if (this.tailCalls) {
 						const body = path.get("body.0");
-						if (this.usedTailReturn) {
-							body.insertBefore(template(`function __tail_return(result) {
-								return result;
-							}`)());
-						}
 						for (var i in this.tailCalls) {
 							if (this.tailCalls.hasOwnProperty(i)) {
 								let arguments = Array(i-0).toString().split(",").map((v,i) => "_" + i).join(",");
-								path.get("body.0").insertBefore(template(`function __as_tail_recursive${i}(recursiveFunction) {
+								body.insertBefore(template(`function __as_tail_recursive${i}(recursiveFunction) {
 									__recursion_trampoline.__recursive_body = recursiveFunction;
 									__recursion_trampoline.toString = function() {
 										return recursiveFunction.toString();
@@ -438,6 +433,11 @@ module.exports = function({ types, template }) {
 									}
 								}`)());
 							}
+						}
+						if (this.usedTailReturn) {
+							body.insertBefore(template(`function __tail_return(result) {
+								return result;
+							}`)());
 						}
 						path.stop();
 					}
