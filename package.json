@@ -1,0 +1,29 @@
+{
+  "name": "babel-plugin-tailcall-via-trampolines",
+  "version": "0.1.0",
+  "description": "Tail call optimization via trampolines",
+  "main": "tco.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rpetrich/babel-plugin-tailcall-via-trampolines.git"
+  },
+  "keywords": [
+    "tco",
+    "tail",
+    "optimization",
+    "babel"
+  ],
+  "author": "Ryan Petrich <rpetrich@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/rpetrich/babel-plugin-tailcall-via-trampolines/issues"
+  },
+  "homepage": "https://github.com/rpetrich/babel-plugin-tailcall-via-trampolines#readme",
+  "peerDependencies": {
+    "babel-core": "^6.26.0",
+    "babel-traverse": "^6.26.0"
+  }
+}
