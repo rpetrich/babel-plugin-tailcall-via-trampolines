@@ -351,6 +351,13 @@ function labelsForPath(path) {
 }
 
 function shouldTailCallOptimize(path) {
+	const parentPath = path.parentPath;
+	if (parentPath.isCallExpression()) {
+		const callee = parentPath.get("callee");
+		if (callee.isIdentifier() && /^__as_tail_recursive\d+$/.test(callee.node.name)) {
+			return false;
+		}
+	}
 	const labels = labelsForPath(path);
 	const disabledIndex = labels.indexOf("not_tail_optimized");
 	if (disabledIndex === -1) {
