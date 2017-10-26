@@ -207,14 +207,14 @@ function isPureAndUndefined(path) {
 }
 
 function rewriteReturnedExpression(types, path, selfIdentifierName, selfUsesThis) {
-	if (path.isConditionalExpression()) {
-		return rewriteReturnedExpression(types, path.get("consequent"), selfIdentifierName, selfUsesThis) || rewriteReturnedExpression(types, path.get("alternate"), selfIdentifierName, selfUsesThis);
-	}
+	path.skip();
 	if (path.isLogicalExpression()) {
 		const leftIdentifier = path.scope.generateUidIdentifier("left");
 		path.insertBefore(types.variableDeclaration("var", [types.variableDeclarator(leftIdentifier)]));
-		path.replaceWith(types.sequenceExpression([types.assignmentExpression("=", leftIdentifier, path.node.left), types.logicalExpression(path.node.operator, leftIdentifier, path.node.right)]));
-		return rewriteReturnedExpression(types, path.get("expressions.1.left"), selfIdentifierName, selfUsesThis) || rewriteReturnedExpression(types, path.get("expressions.1.right"), selfIdentifierName, selfUsesThis);
+		path.replaceWith(types.conditionalExpression(types.assignmentExpression("=", leftIdentifier, path.node.left), leftIdentifier, path.node.right));
+	}
+	if (path.isConditionalExpression()) {
+		return rewriteReturnedExpression(types, path.get("consequent"), selfIdentifierName, selfUsesThis) | rewriteReturnedExpression(types, path.get("alternate"), selfIdentifierName, selfUsesThis);
 	}
 	let usedTailReturn;
 	const expressions = [];
