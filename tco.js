@@ -162,20 +162,61 @@ function allPathsMatch(path, matchingNodeTypes) {
 	return match.all;
 }
 
+function isPure(path) {
+	if (path.isBooleanLiteral()) {
+		return true;
+	}
+	if (path.isStringLiteral()) {
+		return true;
+	}
+	if (path.isNullLiteral()) {
+		return true;
+	}
+	if (path.isIdentifier()) {
+		return true;
+	}
+	if (path.isThisExpression()) {
+		return true;
+	}
+	if (path.isArrayExpression()) {
+		return path.node.elements.all((argument, i) => isPure(path.get(`arguments.${i}`)));
+	}
+	if (path.isUnaryExpression()) {
+		switch (path.node.operator) {
+			case "void":
+			case "!":
+			case "+":
+			case "-":
+			case "~":
+			case "typeof":
+				return isPure(path.get("argument"))
+				break;
+		}
+	}
+	return false;
+}
+
+function isPureAndUndefined(path) {
+	if (path.isIdentifier() && path.node.name === "undefined") {
+		return true;
+	}
+	if (path.isUnaryExpression() && path.node.operator === "void" && isPure(path.get("argument"))) {
+		return true;
+	}
+	return false;
+}
+
 function rewriteReturnedExpression(types, path, selfIdentifierName, selfUsesThis) {
 	if (path.isConditionalExpression()) {
-		rewriteReturnedExpression(types, path.get("consequent"), selfIdentifierName, selfUsesThis);
-		rewriteReturnedExpression(types, path.get("alternate"), selfIdentifierName, selfUsesThis);
-		return;
+		return rewriteReturnedExpression(types, path.get("consequent"), selfIdentifierName, selfUsesThis) || rewriteReturnedExpression(types, path.get("alternate"), selfIdentifierName, selfUsesThis);
 	}
 	if (path.isLogicalExpression()) {
 		const leftIdentifier = path.scope.generateUidIdentifier("left");
 		path.insertBefore(types.variableDeclaration("var", [types.variableDeclarator(leftIdentifier)]));
 		path.replaceWith(types.sequenceExpression([types.assignmentExpression("=", leftIdentifier, path.node.left), types.logicalExpression(path.node.operator, leftIdentifier, path.node.right)]));
-		rewriteReturnedExpression(types, path.get("expressions.1.left"), selfIdentifierName, selfUsesThis);
-		rewriteReturnedExpression(types, path.get("expressions.1.right"), selfIdentifierName, selfUsesThis);
-		return;
+		return rewriteReturnedExpression(types, path.get("expressions.1.left"), selfIdentifierName, selfUsesThis) || rewriteReturnedExpression(types, path.get("expressions.1.right"), selfIdentifierName, selfUsesThis);
 	}
+	let usedTailReturn;
 	const expressions = [];
 	if (path.isCallExpression()) {
 		if (path.node.callee.type == "MemberExpression") {
@@ -197,8 +238,14 @@ function rewriteReturnedExpression(types, path, selfIdentifierName, selfUsesThis
 				expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), callee));
 			}
 		}
-		expressions.push(path.node.arguments.length != 0 ? types.arrayExpression(path.node.arguments) : types.identifier("undefined"));
-	} else if (path.node) {
+		if (path.node.arguments.length !== 0) {
+			expressions.push(types.arrayExpression(path.node.arguments));
+		} else if (expressions.length) {
+			expressions.push(types.unaryExpression("void", expressions.pop()));
+		} else {
+			expressions.push(types.identifier("undefined"));
+		}
+	} else if (path.node && !isPureAndUndefined(path)) {
 		// return ...;
 		usedTailReturn = true;
 		expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
@@ -206,11 +253,11 @@ function rewriteReturnedExpression(types, path, selfIdentifierName, selfUsesThis
 	} else {
 		// return;
 		usedTailReturn = true;
-		expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
-		expressions.push(types.identifier("undefined"));
+		expressions.push(types.unaryExpression("void", types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return"))));
 	}
 	// Prefer simpler forms
 	path.replaceWith(expressions.length === 1 ? expressions[0] : types.sequenceExpression(expressions));
+	return usedTailReturn;
 }
 
 function rewriteTailCalls(types, path, selfIdentifierName) {
@@ -230,8 +277,7 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 	path.traverse({
 		ReturnStatement: {
 			exit(path) {
-				const argumentPath = path.get("argument");
-				rewriteReturnedExpression(types, argumentPath, selfIdentifierName, selfUsesThis);
+				usedTailReturn |= rewriteReturnedExpression(types, path.get("argument"), selfIdentifierName, selfUsesThis);
 				path.skip();
 			}
 		},
