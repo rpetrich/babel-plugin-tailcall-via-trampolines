@@ -162,6 +162,56 @@ function allPathsMatch(path, matchingNodeTypes) {
 	return match.all;
 }
 
+function rewriteReturnedExpression(types, path, selfIdentifierName, selfUsesThis) {
+	if (path.isConditionalExpression()) {
+		rewriteReturnedExpression(types, path.get("consequent"), selfIdentifierName, selfUsesThis);
+		rewriteReturnedExpression(types, path.get("alternate"), selfIdentifierName, selfUsesThis);
+		return;
+	}
+	if (path.isLogicalExpression()) {
+		const leftIdentifier = path.scope.generateUidIdentifier("left");
+		path.insertBefore(types.variableDeclaration("var", [types.variableDeclarator(leftIdentifier)]));
+		path.replaceWith(types.sequenceExpression([types.assignmentExpression("=", leftIdentifier, path.node.left), types.logicalExpression(path.node.operator, leftIdentifier, path.node.right)]));
+		rewriteReturnedExpression(types, path.get("expressions.1.left"), selfIdentifierName, selfUsesThis);
+		rewriteReturnedExpression(types, path.get("expressions.1.right"), selfIdentifierName, selfUsesThis);
+		return;
+	}
+	const expressions = [];
+	if (path.isCallExpression()) {
+		if (path.node.callee.type == "MemberExpression") {
+			// return foo.bar(...);
+			// Uses a compound expression to avoid invoking the left side of the member expression twice (which would run side-effects twice!)
+			// Evaluates left side of member expression, then right side, then arguments
+			expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.memberExpression(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), argumentPath.node.callee.object), argumentPath.node.callee.property, argumentPath.node.callee.computed)));
+		} else {
+			// return foo(...);
+			// Evaluates left side of call expression, then arguments
+			const callee = path.node.callee;
+			const isSelf = callee.type === "Identifier" && callee.name === selfIdentifierName;
+			if (!isSelf || selfUsesThis) {
+				// Relies on the fact that self doesn't use this
+				expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), types.identifier("null")));
+			}
+			if (!isSelf) {
+				// Relies on the fact that self was just called, and no need to set state.next again
+				expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), callee));
+			}
+		}
+		expressions.push(path.node.arguments.length != 0 ? types.arrayExpression(path.node.arguments) : types.identifier("undefined"));
+	} else if (path.node) {
+		// return ...;
+		usedTailReturn = true;
+		expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
+		expressions.push(types.arrayExpression([path.node]));
+	} else {
+		// return;
+		usedTailReturn = true;
+		expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
+		expressions.push(types.identifier("undefined"));
+	}
+	// Prefer simpler forms
+	path.replaceWith(expressions.length === 1 ? expressions[0] : types.sequenceExpression(expressions));
+}
 
 function rewriteTailCalls(types, path, selfIdentifierName) {
 	let selfUsesThis = false;
@@ -179,72 +229,9 @@ function rewriteTailCalls(types, path, selfIdentifierName) {
 	let usedTailReturn = false;
 	path.traverse({
 		ReturnStatement: {
-			enter(path) {
-				const argumentPath = path.get("argument");
-				if (argumentPath.isConditionalExpression()) {
-					path.replaceWith(types.ifStatement(argumentPath.node.test, types.returnStatement(argumentPath.node.consequent), types.returnStatement(argumentPath.node.alternate)));
-				} else if (argumentPath.isLogicalExpression()) {
-					const leftIdentifier = path.scope.generateUidIdentifier("left");
-					path.insertBefore(types.variableDeclaration("var", [types.variableDeclarator(leftIdentifier, argumentPath.node.left)]));
-					switch (argumentPath.node.operator) {
-						case "||":
-							path.replaceWith(types.ifStatement(leftIdentifier, types.returnStatement(leftIdentifier), types.returnStatement(argumentPath.node.right)));
-							break;
-						case "&&":
-							path.replaceWith(types.ifStatement(leftIdentifier, types.returnStatement(argumentPath.node.right), types.returnStatement(leftIdentifier)));
-							break;
-						default:
-							throw argumentPath.buildCodeFrameError("Unknown local operator: " + argumentPath.operator);
-					}
-				}
-			},
 			exit(path) {
 				const argumentPath = path.get("argument");
-				const expressions = [];
-				if (argumentPath.isCallExpression()) {
-					if (argumentPath.node.callee.type == "MemberExpression") {
-						// return foo.bar(...);
-						// Uses a compound expression to avoid invoking the left side of the member expression twice (which would run side-effects twice!)
-						// Evaluates left side of member expression, then right side, then arguments
-						expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.memberExpression(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), argumentPath.node.callee.object), argumentPath.node.callee.property, argumentPath.node.callee.computed)));
-					} else {
-						// return foo(...);
-						// Evaluates left side of call expression, then arguments
-						const callee = argumentPath.node.callee;
-						const isSelf = callee.type === "Identifier" && callee.name === selfIdentifierName;
-						if (!isSelf || selfUsesThis) {
-							// Relies on the fact that self doesn't use this
-							expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("this")), types.identifier("null")));
-						}
-						if (!isSelf) {
-							// Relies on the fact that self was just called, and no need to set state.next again
-							expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), callee));
-						}
-					}
-					expressions.push(argumentPath.node.arguments.length != 0 ? types.arrayExpression(argumentPath.node.arguments) : types.identifier("undefined"));
-				} else if (argumentPath.node) {
-					// return ...;
-					usedTailReturn = true;
-					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
-					expressions.push(types.arrayExpression([argumentPath.node]));
-				} else {
-					// return;
-					usedTailReturn = true;
-					expressions.push(types.assignmentExpression("=", types.memberExpression(types.thisExpression(), types.identifier("next")), types.identifier("__tail_return")));
-					expressions.push(types.identifier("undefined"));
-				}
-				// Prefer simpler forms
-				switch (expressions.length) {
-					case 0:
-						path.replaceWith(types.returnStatement());
-						break;
-					case 1:
-						path.replaceWith(types.returnStatement(expressions[0]));
-						break;
-					default:
-						path.replaceWith(types.returnStatement(types.sequenceExpression(expressions)));
-						break;
-				}
+				rewriteReturnedExpression(types, argumentPath, selfIdentifierName, selfUsesThis);
 				path.skip();
 			}
 		},
