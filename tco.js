@@ -454,14 +454,13 @@ module.exports = function({ types, template }) {
 				exit(path) {
 					if (this.tailCalls) {
 						const body = path.get("body.0");
+						body.insertBefore(template(`function __recursive_toString() { return this.__recursive_body.toString(); }`)());
 						for (var i in this.tailCalls) {
 							if (this.tailCalls.hasOwnProperty(i)) {
 								let arguments = Array(i-0).toString().split(",").map((v,i) => "_" + i).join(",");
 								body.insertBefore(template(`function __as_tail_recursive${i}(recursiveFunction) {
 									__recursion_trampoline.__recursive_body = recursiveFunction;
-									__recursion_trampoline.toString = function() {
-										return recursiveFunction.toString();
-									}
+									__recursion_trampoline.toString = __recursive_toString;
 									return __recursion_trampoline;
 									function __recursion_trampoline(${arguments}) {
 										var state = { next: __recursion_trampoline, this: this };

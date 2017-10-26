@@ -1,10 +1,10 @@
+function __recursive_toString() {
+	return this.__recursive_body.toString();
+}
+
 function __as_tail_recursive3(recursiveFunction) {
 	__recursion_trampoline.__recursive_body = recursiveFunction;
-
-	__recursion_trampoline.toString = function () {
-		return recursiveFunction.toString();
-	};
-
+	__recursion_trampoline.toString = __recursive_toString;
 	return __recursion_trampoline;
 
 	function __recursion_trampoline(_0, _1, _2) {
